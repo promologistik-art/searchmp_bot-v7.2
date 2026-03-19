@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Версия 190326 - Бот для анализа товаров на Ozon
+Версия 160326 - Бот для анализа товаров на Ozon
 Главный файл запуска
 """
 
@@ -58,9 +58,17 @@ from bot.handlers.start_handler import (
 from admin_notify import add_user_access, list_users, user_info
 from bot.menu import set_bot_commands
 
-# === НОВЫЙ ИМПОРТ: Загрузчик комиссий с GitHub ===
-from utils.commission_loader import CommissionLoader
-# =================================================
+# === БЕЗОПАСНЫЙ ИМПОРТ: Загрузчик комиссий с GitHub ===
+# Пытаемся импортировать, но если модуля нет - просто логируем и продолжаем работу
+try:
+    from utils.commission_loader import CommissionLoader
+    COMMISSION_LOADER_AVAILABLE = True
+    logger.info("✅ Модуль загрузчика комиссий найден")
+except ImportError:
+    CommissionLoader = None
+    COMMISSION_LOADER_AVAILABLE = False
+    logger.warning("⚠️ Модуль utils.commission_loader не найден. Функционал комиссий будет недоступен")
+# =====================================================
 
 import socket
 socket.setdefaulttimeout(30)
@@ -74,6 +82,14 @@ async def update_commissions_command(update, context):
     """
     user_id = update.effective_user.id
     username = update.effective_user.username
+    
+    # Проверяем, доступен ли модуль
+    if not COMMISSION_LOADER_AVAILABLE:
+        await update.message.reply_text(
+            "❌ Модуль загрузчика комиссий не установлен.\n"
+            "Создайте файл utils/commission_loader.py"
+        )
+        return
     
     # Проверяем права администратора
     if user_id not in ADMIN_IDS and username not in ADMIN_USERNAMES:
@@ -92,11 +108,16 @@ async def update_commissions_command(update, context):
         # Скачиваем файл принудительно (force=True)
         if loader.download_file(force=True):
             # Получаем размер файла для красоты
-            file_size = os.path.getsize('cache/templates/comcat.xlsx') / 1024
+            if os.path.exists('cache/templates/comcat.xlsx'):
+                file_size = os.path.getsize('cache/templates/comcat.xlsx') / 1024
+                size_text = f"{file_size:.1f} KB"
+            else:
+                size_text = "неизвестно"
+                
             await status_msg.edit_text(
                 f"✅ Файл с комиссиями успешно обновлён!\n\n"
                 f"📁 Путь: cache/templates/comcat.xlsx\n"
-                f"📊 Размер: {file_size:.1f} KB\n"
+                f"📊 Размер: {size_text}\n"
                 f"🔄 Новые комиссии будут применяться при следующем анализе\n\n"
                 f"💡 Можно проверить командой /status"
             )
@@ -123,29 +144,36 @@ async def post_init(application: Application):
     """Действия после инициализации бота"""
     await set_bot_commands(application)
     
-    # === НОВОЕ: Автоматическая загрузка комиссий при старте ===
-    try:
-        logger.info("🔄 Проверяю наличие файла с комиссиями при старте...")
-        loader = CommissionLoader(local_path='cache/templates/comcat.xlsx')
-        
-        # Проверяем, существует ли файл
-        if not os.path.exists('cache/templates/comcat.xlsx'):
-            logger.info("📁 Файл комиссий не найден, скачиваю с GitHub...")
-            if loader.download_file(force=True):
-                logger.info("✅ Файл комиссий успешно загружен при старте")
-            else:
-                logger.warning("⚠️ Не удалось загрузить файл комиссий при старте")
-        else:
-            # Файл есть, но можно проверить его актуальность (по желанию)
-            file_size = os.path.getsize('cache/templates/comcat.xlsx') / 1024
-            logger.info(f"✅ Файл комиссий найден локально: {file_size:.1f} KB")
+    # === НОВОЕ: Автоматическая загрузка комиссий при старте (только если модуль доступен) ===
+    if COMMISSION_LOADER_AVAILABLE:
+        try:
+            logger.info("🔄 Проверяю наличие файла с комиссиями при старте...")
             
-            # Если хотите проверять обновления при каждом запуске - раскомментируйте:
-            # logger.info("🔄 Проверяю обновления файла комиссий...")
-            # if loader.download_file(force=True):
-            #     logger.info("✅ Файл комиссий обновлён")
-    except Exception as e:
-        logger.error(f"❌ Ошибка при загрузке комиссий при старте: {e}")
+            # Создаем папку, если её нет
+            os.makedirs('cache/templates', exist_ok=True)
+            
+            loader = CommissionLoader(local_path='cache/templates/comcat.xlsx')
+            
+            # Проверяем, существует ли файл
+            if not os.path.exists('cache/templates/comcat.xlsx'):
+                logger.info("📁 Файл комиссий не найден, скачиваю с GitHub...")
+                if loader.download_file(force=True):
+                    logger.info("✅ Файл комиссий успешно загружен при старте")
+                else:
+                    logger.warning("⚠️ Не удалось загрузить файл комиссий при старте")
+            else:
+                # Файл есть, логируем его размер
+                file_size = os.path.getsize('cache/templates/comcat.xlsx') / 1024
+                logger.info(f"✅ Файл комиссий найден локально: {file_size:.1f} KB")
+                
+                # По желанию можно проверять обновления (раскомментировать если нужно)
+                # logger.info("🔄 Проверяю обновления файла комиссий...")
+                # if loader.download_file(force=True):
+                #     logger.info("✅ Файл комиссий обновлён")
+        except Exception as e:
+            logger.error(f"❌ Ошибка при загрузке комиссий при старте: {e}")
+    else:
+        logger.info("⏭️ Пропускаю загрузку комиссий (модуль не найден)")
     # ==========================================================
     
     logger.info("✅ Команды бота установлены")
@@ -169,7 +197,14 @@ def main():
     print("✅ Загрузка своих категорий через Excel")
     print("✅ Админы имеют безлимит")
     print("✅ Управление пользователями")
-    print("✅ Автозагрузка комиссий с GitHub")  # Добавил новый пункт
+    
+    # Проверяем доступность модуля комиссий и выводим соответствующий статус
+    if COMMISSION_LOADER_AVAILABLE:
+        print("✅ Автозагрузка комиссий с GitHub (активна)")
+    else:
+        print("⚠️ Автозагрузка комиссий отключена (файл commission_loader.py не найден)")
+        print("   Создайте utils/commission_loader.py для включения")
+    
     print("=" * 60)
 
     # Увеличенные таймауты Telegram API (актуально для отправки/скачивания файлов)
@@ -240,7 +275,10 @@ def main():
 
     # === АДМИН-КОМАНДЫ ===
     app.add_handler(CommandHandler("admin", admin_panel))
-    app.add_handler(CommandHandler("update_commissions", update_commissions_command))  # НОВАЯ КОМАНДА
+    
+    # Добавляем команду update_commissions только если модуль доступен
+    if COMMISSION_LOADER_AVAILABLE:
+        app.add_handler(CommandHandler("update_commissions", update_commissions_command))
 
     # === ДИАЛОГИ ===
     app.add_handler(crit_conv)
@@ -287,7 +325,11 @@ def main():
     print("  /status - статус и лимиты")
     print("  /list - список сохранённых категорий")
     print("  /admin - панель администратора")
-    print("  /update_commissions - обновить комиссии (админ)")  # НОВОЕ
+    
+    # Показываем команду только если модуль доступен
+    if COMMISSION_LOADER_AVAILABLE:
+        print("  /update_commissions - обновить комиссии (админ)")
+    
     print("=" * 60)
 
     app.run_polling()
