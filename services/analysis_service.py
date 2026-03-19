@@ -25,11 +25,13 @@ import time
 class CommissionCalculator:
     """
     Калькулятор комиссий на основе файла comcat.xlsx
+    Использует ГОТОВЫЕ ставки из файла, не пытаясь угадать категорию
     """
     
     def __init__(self, commissions_file: str = 'cache/templates/comcat.xlsx'):
         self.commissions_file = Path(commissions_file)
         self.commissions_df = None
+        self.commission_map = {}  # Для быстрого поиска
         self._load_commissions()
     
     def _load_commissions(self):
@@ -44,79 +46,93 @@ class CommissionCalculator:
                 self.commissions_file, 
                 sheet_name='Категории'
             )
+            
+            # Создаём карту для быстрого поиска по названию категории
+            # Приводим к нижнему регистру для регистронезависимого поиска
+            for _, row in self.commissions_df.iterrows():
+                cat_name = str(row.get('Категория', '')).strip().lower()
+                if cat_name and cat_name not in self.commission_map:
+                    self.commission_map[cat_name] = {
+                        'до 100': row.get('Комиссия до 100 руб.', 0),
+                        '100-300': row.get('Комиссия свыше 100 до 300 руб.', 0),
+                        '300-1500': row.get('Комиссия свыше 300 до 1500 руб.', 0),
+                        '1500-5000': row.get('Комиссия свыше 1500 до 5000 руб.', 0),
+                        '5000-10000': row.get('Комиссия свыше 5000 до 10 000 руб.', 0),
+                        'свыше 10000': row.get('Комиссия свыше 10 000 руб.', 0)
+                    }
+            
             logger.info(f"✅ Загружено {len(self.commissions_df)} записей о комиссиях")
+            logger.info(f"✅ Создана карта из {len(self.commission_map)} уникальных категорий")
             
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки комиссий: {e}")
             self.commissions_df = None
+            self.commission_map = {}
     
-    def get_commission(self, category_name: str, price: float) -> float:
+    def get_commission(self, user_category: str, price: float) -> float:
         """
-        Возвращает комиссию для категории и цены
+        Возвращает комиссию для категории (которую выбрал пользователь) и цены
         
         Args:
-            category_name: название категории (например, "Женщинам")
+            user_category: категория, которую выбрал пользователь (например, "Женщинам")
             price: цена товара в рублях
             
         Returns:
-            float: сумма комиссии в рублях
+            float: комиссия в рублях
         """
-        if self.commissions_df is None:
+        if not self.commission_map:
+            logger.warning("⚠️ Карта комиссий пуста")
             return 0.0
         
         try:
-            # Ищем категорию по названию (регистронезависимо)
-            # Сначала точный поиск по колонке "Категория"
-            mask = self.commissions_df['Категория'].str.contains(
-                category_name, 
-                na=False, 
-                case=False
-            )
-            row = self.commissions_df[mask]
+            # Нормализуем название категории пользователя
+            cat_key = user_category.strip().lower()
             
-            # Если не нашли, пробуем поиск по "Полный путь"
-            if row.empty:
-                mask = self.commissions_df['Полный путь'].str.contains(
-                    category_name, 
-                    na=False, 
-                    case=False
-                )
-                row = self.commissions_df[mask]
-            
-            if row.empty:
-                # Если совсем не нашли, логируем для отладки
-                logger.debug(f"Категория не найдена в справочнике комиссий: {category_name}")
-                return 0.0
-            
-            # Определяем колонку в зависимости от цены
-            if price <= 100:
-                rate = row.iloc[0]['Комиссия до 100 руб.']
-            elif price <= 300:
-                rate = row.iloc[0]['Комиссия свыше 100 до 300 руб.']
-            elif price <= 1500:
-                rate = row.iloc[0]['Комиссия свыше 300 до 1500 руб.']
-            elif price <= 5000:
-                rate = row.iloc[0]['Комиссия свыше 1500 до 5000 руб.']
-            elif price <= 10000:
-                rate = row.iloc[0]['Комиссия свыше 5000 до 10 000 руб.']
+            # Прямой поиск по категории пользователя
+            if cat_key in self.commission_map:
+                commission_data = self.commission_map[cat_key]
+                logger.info(f"✅ Категория '{user_category}' найдена в справочнике")
             else:
-                rate = row.iloc[0]['Комиссия свыше 10 000 руб.']
+                # Если точного совпадения нет, пробуем частичный поиск
+                found = False
+                for db_cat, data in self.commission_map.items():
+                    if cat_key in db_cat or db_cat in cat_key:
+                        commission_data = data
+                        logger.info(f"✅ Частичное совпадение: '{user_category}' ~ '{db_cat}'")
+                        found = True
+                        break
+                
+                if not found:
+                    logger.warning(f"❌ Категория '{user_category}' не найдена в справочнике")
+                    return 0.0
             
-            # Преобразуем в число
-            if pd.isna(rate):
+            # Определяем ставку в зависимости от цены
+            if price <= 100:
+                rate = commission_data['до 100']
+            elif price <= 300:
+                rate = commission_data['100-300']
+            elif price <= 1500:
+                rate = commission_data['300-1500']
+            elif price <= 5000:
+                rate = commission_data['1500-5000']
+            elif price <= 10000:
+                rate = commission_data['5000-10000']
+            else:
+                rate = commission_data['свыше 10000']
+            
+            # Проверяем, что ставка получена
+            if pd.isna(rate) or rate == 0:
+                logger.warning(f"⚠️ Ставка для категории '{user_category}' при цене {price} равна 0")
                 return 0.0
             
-            # Если комиссия указана как процент (например, 14, 20, 35)
-            # Судя по файлу, это проценты
-            commission_percent = float(rate)
+            # Конвертируем процент в рубли
+            commission_rub = price * float(rate) / 100
             
-            # Рассчитываем комиссию в рублях
-            commission_rub = price * commission_percent / 100
-            
+            logger.info(f"💰 Комиссия: {rate}% = {commission_rub:.2f} руб")
             return round(commission_rub, 2)
             
         except Exception as e:
-            logger.error(f"Ошибка расчёта комиссии для {category_name}: {e}")
+            logger.error(f"❌ Ошибка расчёта комиссии для {user_category}: {e}")
             return 0.0
 
 
@@ -325,13 +341,13 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
 
     session = create_session_with_retries()
     
-    # === НОВОЕ: Получаем калькулятор комиссий ===
+    # === ПОЛУЧАЕМ КАЛЬКУЛЯТОР КОМИССИЙ ===
     commission_calc = get_commission_calculator()
-    # ============================================
+    # ====================================
 
     for idx, num in enumerate(sorted(selected), 1):
         cat = categories[num - 1]
-        name = cat.get('name', '')
+        category_name = cat.get('name', '')  # Название категории, которое выбрал пользователь
         path = cat.get('path', '')
 
         viewed.add(num)
@@ -344,7 +360,7 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
 
         await status_msg.edit_text(
             f"📌 **Категория {idx}/{len(selected)}**\n"
-            f"📋 {name}\n"
+            f"📋 {category_name}\n"
             f"⏳ Получение данных...\n"
             f"📊 Прогресс: {progress:.1f}%\n"
             f"⏱ Прошло: {int(elapsed // 60)} мин {int(elapsed % 60)} сек\n"
@@ -367,10 +383,13 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
             results = analyze_competitors(filtered, criteria)
             if results:
                 for r in results:
-                    r['category'] = name
-                    # === НОВОЕ: Добавляем расчёт комиссии ===
-                    r['commission'] = commission_calc.get_commission(name, r['price'])
-                    # ======================================
+                    r['category'] = category_name
+                    # === ВАЖНО: Используем ГОТОВУЮ категорию пользователя ===
+                    r['commission'] = commission_calc.get_commission(
+                        user_category=category_name,  # Категория, которую выбрал пользователь
+                        price=r['price']
+                    )
+                    # ======================================================
                 all_results.extend(results)
                 good += 1
             else:
@@ -397,10 +416,7 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
 
     await status_msg.edit_text("📊 Создаю Excel...")
 
-    # === ВАЖНО: Передаём результаты с комиссиями ===
     excel = create_excel_report(all_results)
-    # ==============================================
-
     fname = f"ozon_{len(selected)}cats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
     await status_msg.delete()
