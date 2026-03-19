@@ -103,7 +103,7 @@ async def update_commissions_command(update, context):
     
     try:
         # Создаем загрузчик с правильным путём к файлу
-        loader = CommissionLoader(local_path='cache/templates/comcat.xlsx')
+        loader = CommissionLoader('cache/templates/comcat.xlsx')
         
         # Скачиваем файл принудительно (force=True)
         if loader.download_file(force=True):
@@ -152,7 +152,7 @@ async def post_init(application: Application):
             # Создаем папку, если её нет
             os.makedirs('cache/templates', exist_ok=True)
             
-            loader = CommissionLoader(local_path='cache/templates/comcat.xlsx')
+            loader = CommissionLoader('cache/templates/comcat.xlsx')
             
             # Проверяем, существует ли файл
             if not os.path.exists('cache/templates/comcat.xlsx'):
