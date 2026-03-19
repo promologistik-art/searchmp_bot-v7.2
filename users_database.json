@@ -1,0 +1,32 @@
+{
+  "44065210": {
+    "free_queries_used": 0,
+    "free_queries_total": 3,
+    "total_queries": 11,
+    "registered_at": "2026-03-10T18:53:01.385098",
+    "subscription_active": false,
+    "subscription_until": null,
+    "custom_quota": null,
+    "username": "silverzen",
+    "full_name": "Zen",
+    "is_admin": false,
+    "added_by": null,
+    "added_at": null,
+    "last_activity": "2026-03-16T14:35:10.892033"
+  },
+  "7412453740": {
+    "free_queries_used": 3,
+    "free_queries_total": 3,
+    "total_queries": 3,
+    "registered_at": "2026-03-12T11:48:01.604125",
+    "subscription_active": false,
+    "subscription_until": null,
+    "custom_quota": null,
+    "username": "Bpesr",
+    "full_name": "Бешеный пес режима",
+    "is_admin": false,
+    "added_by": null,
+    "added_at": null,
+    "last_activity": "2026-03-12T13:55:05.992440"
+  }
+}
