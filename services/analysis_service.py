@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import List, Dict, Optional
 import requests
+import pandas as pd
+from pathlib import Path
 
 from config import MPSTATS_API_URL, HEADERS, logger, ADMIN_USERNAMES
 
@@ -18,6 +20,116 @@ from bot.keyboards import get_end_keyboard, get_after_analysis_keyboard
 from admin_notify import notify_admin_analyze
 
 import time
+
+
+class CommissionCalculator:
+    """
+    Калькулятор комиссий на основе файла comcat.xlsx
+    """
+    
+    def __init__(self, commissions_file: str = 'cache/templates/comcat.xlsx'):
+        self.commissions_file = Path(commissions_file)
+        self.commissions_df = None
+        self._load_commissions()
+    
+    def _load_commissions(self):
+        """Загружает данные комиссий из Excel"""
+        try:
+            if not self.commissions_file.exists():
+                logger.warning(f"⚠️ Файл комиссий не найден: {self.commissions_file}")
+                return
+            
+            # Загружаем лист "Категории"
+            self.commissions_df = pd.read_excel(
+                self.commissions_file, 
+                sheet_name='Категории'
+            )
+            logger.info(f"✅ Загружено {len(self.commissions_df)} записей о комиссиях")
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка загрузки комиссий: {e}")
+            self.commissions_df = None
+    
+    def get_commission(self, category_name: str, price: float) -> float:
+        """
+        Возвращает комиссию для категории и цены
+        
+        Args:
+            category_name: название категории (например, "Женщинам")
+            price: цена товара в рублях
+            
+        Returns:
+            float: сумма комиссии в рублях
+        """
+        if self.commissions_df is None:
+            return 0.0
+        
+        try:
+            # Ищем категорию по названию (регистронезависимо)
+            # Сначала точный поиск по колонке "Категория"
+            mask = self.commissions_df['Категория'].str.contains(
+                category_name, 
+                na=False, 
+                case=False
+            )
+            row = self.commissions_df[mask]
+            
+            # Если не нашли, пробуем поиск по "Полный путь"
+            if row.empty:
+                mask = self.commissions_df['Полный путь'].str.contains(
+                    category_name, 
+                    na=False, 
+                    case=False
+                )
+                row = self.commissions_df[mask]
+            
+            if row.empty:
+                # Если совсем не нашли, логируем для отладки
+                logger.debug(f"Категория не найдена в справочнике комиссий: {category_name}")
+                return 0.0
+            
+            # Определяем колонку в зависимости от цены
+            if price <= 100:
+                rate = row.iloc[0]['Комиссия до 100 руб.']
+            elif price <= 300:
+                rate = row.iloc[0]['Комиссия свыше 100 до 300 руб.']
+            elif price <= 1500:
+                rate = row.iloc[0]['Комиссия свыше 300 до 1500 руб.']
+            elif price <= 5000:
+                rate = row.iloc[0]['Комиссия свыше 1500 до 5000 руб.']
+            elif price <= 10000:
+                rate = row.iloc[0]['Комиссия свыше 5000 до 10 000 руб.']
+            else:
+                rate = row.iloc[0]['Комиссия свыше 10 000 руб.']
+            
+            # Преобразуем в число
+            if pd.isna(rate):
+                return 0.0
+            
+            # Если комиссия указана как процент (например, 14, 20, 35)
+            # Судя по файлу, это проценты
+            commission_percent = float(rate)
+            
+            # Рассчитываем комиссию в рублях
+            commission_rub = price * commission_percent / 100
+            
+            return round(commission_rub, 2)
+            
+        except Exception as e:
+            logger.error(f"Ошибка расчёта комиссии для {category_name}: {e}")
+            return 0.0
+
+
+# Создаём глобальный экземпляр калькулятора (загрузится один раз при старте)
+_commission_calculator = None
+
+def get_commission_calculator():
+    """Возвращает экземпляр калькулятора комиссий (синглтон)"""
+    global _commission_calculator
+    if _commission_calculator is None:
+        _commission_calculator = CommissionCalculator()
+    return _commission_calculator
+
 
 async def get_category_items(path: str, session) -> List[Dict]:
     """Получает данные по категории"""
@@ -212,6 +324,10 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
     start_time = time.time()
 
     session = create_session_with_retries()
+    
+    # === НОВОЕ: Получаем калькулятор комиссий ===
+    commission_calc = get_commission_calculator()
+    # ============================================
 
     for idx, num in enumerate(sorted(selected), 1):
         cat = categories[num - 1]
@@ -252,6 +368,9 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
             if results:
                 for r in results:
                     r['category'] = name
+                    # === НОВОЕ: Добавляем расчёт комиссии ===
+                    r['commission'] = commission_calc.get_commission(name, r['price'])
+                    # ======================================
                 all_results.extend(results)
                 good += 1
             else:
@@ -278,7 +397,10 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
 
     await status_msg.edit_text("📊 Создаю Excel...")
 
+    # === ВАЖНО: Передаём результаты с комиссиями ===
     excel = create_excel_report(all_results)
+    # ==============================================
+
     fname = f"ozon_{len(selected)}cats_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
     await status_msg.delete()
