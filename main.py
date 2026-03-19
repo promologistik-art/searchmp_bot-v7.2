@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Версия 160326 - Бот для анализа товаров на Ozon
+Версия 190326 - Бот для анализа товаров на Ozon
 Главный файл запуска
 """
 
@@ -58,25 +58,96 @@ from bot.handlers.start_handler import (
 from admin_notify import add_user_access, list_users, user_info
 from bot.menu import set_bot_commands
 
-# Импорт справочника комиссий временно отключен
-# from services.commission_ref_generator import CommissionRefGenerator
-# import pandas as pd
-import socket
+# === НОВЫЙ ИМПОРТ: Загрузчик комиссий с GitHub ===
+from utils.commission_loader import CommissionLoader
+# =================================================
 
+import socket
 socket.setdefaulttimeout(30)
 
 
-# Функция update_commission_ref временно отключена
-"""
-async def update_commission_ref(update, context):
-    # Создает справочник комиссий и отправляет админу
-    pass
-"""
+async def update_commissions_command(update, context):
+    """
+    НОВАЯ КОМАНДА: /update_commissions
+    Обновляет файл comcat.xlsx с комиссиями из GitHub
+    Доступна только администраторам
+    """
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+    
+    # Проверяем права администратора
+    if user_id not in ADMIN_IDS and username not in ADMIN_USERNAMES:
+        await update.message.reply_text("⛔ Эта команда только для администраторов")
+        return
+    
+    status_msg = await update.message.reply_text(
+        "🔄 Обновляю файл с комиссиями из GitHub...\n"
+        "Это может занять несколько секунд."
+    )
+    
+    try:
+        # Создаем загрузчик с правильным путём к файлу
+        loader = CommissionLoader(local_path='cache/templates/comcat.xlsx')
+        
+        # Скачиваем файл принудительно (force=True)
+        if loader.download_file(force=True):
+            # Получаем размер файла для красоты
+            file_size = os.path.getsize('cache/templates/comcat.xlsx') / 1024
+            await status_msg.edit_text(
+                f"✅ Файл с комиссиями успешно обновлён!\n\n"
+                f"📁 Путь: cache/templates/comcat.xlsx\n"
+                f"📊 Размер: {file_size:.1f} KB\n"
+                f"🔄 Новые комиссии будут применяться при следующем анализе\n\n"
+                f"💡 Можно проверить командой /status"
+            )
+            logger.info(f"Админ {username} ({user_id}) обновил файл комиссий")
+        else:
+            await status_msg.edit_text(
+                "❌ Не удалось обновить файл с комиссиями.\n\n"
+                "Возможные причины:\n"
+                "• Проблемы с доступом к GitHub\n"
+                "• Файл отсутствует в репозитории\n"
+                "• Ошибка сети\n\n"
+                "Проверьте ссылку в commission_loader.py"
+            )
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении комиссий: {e}")
+        await status_msg.edit_text(
+            f"❌ Ошибка при обновлении:\n"
+            f"`{str(e)[:200]}`",
+            parse_mode='Markdown'
+        )
 
 
 async def post_init(application: Application):
     """Действия после инициализации бота"""
     await set_bot_commands(application)
+    
+    # === НОВОЕ: Автоматическая загрузка комиссий при старте ===
+    try:
+        logger.info("🔄 Проверяю наличие файла с комиссиями при старте...")
+        loader = CommissionLoader(local_path='cache/templates/comcat.xlsx')
+        
+        # Проверяем, существует ли файл
+        if not os.path.exists('cache/templates/comcat.xlsx'):
+            logger.info("📁 Файл комиссий не найден, скачиваю с GitHub...")
+            if loader.download_file(force=True):
+                logger.info("✅ Файл комиссий успешно загружен при старте")
+            else:
+                logger.warning("⚠️ Не удалось загрузить файл комиссий при старте")
+        else:
+            # Файл есть, но можно проверить его актуальность (по желанию)
+            file_size = os.path.getsize('cache/templates/comcat.xlsx') / 1024
+            logger.info(f"✅ Файл комиссий найден локально: {file_size:.1f} KB")
+            
+            # Если хотите проверять обновления при каждом запуске - раскомментируйте:
+            # logger.info("🔄 Проверяю обновления файла комиссий...")
+            # if loader.download_file(force=True):
+            #     logger.info("✅ Файл комиссий обновлён")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при загрузке комиссий при старте: {e}")
+    # ==========================================================
+    
     logger.info("✅ Команды бота установлены")
 
 
@@ -98,6 +169,7 @@ def main():
     print("✅ Загрузка своих категорий через Excel")
     print("✅ Админы имеют безлимит")
     print("✅ Управление пользователями")
+    print("✅ Автозагрузка комиссий с GitHub")  # Добавил новый пункт
     print("=" * 60)
 
     # Увеличенные таймауты Telegram API (актуально для отправки/скачивания файлов)
@@ -168,9 +240,7 @@ def main():
 
     # === АДМИН-КОМАНДЫ ===
     app.add_handler(CommandHandler("admin", admin_panel))
-    
-    # Команда для создания справочника (отключена)
-    # app.add_handler(CommandHandler("update_commission_ref", update_commission_ref))
+    app.add_handler(CommandHandler("update_commissions", update_commissions_command))  # НОВАЯ КОМАНДА
 
     # === ДИАЛОГИ ===
     app.add_handler(crit_conv)
@@ -202,7 +272,6 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_set_quota, pattern="^admin_set_quota_"))
     app.add_handler(CallbackQueryHandler(admin_remove_access, pattern="^admin_remove_access_"))
     
-    
     # === ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ДЛЯ АДМИН-ДИАЛОГОВ ===
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, 
@@ -210,6 +279,15 @@ def main():
     ))
 
     print("🚀 Бот запущен! Отправьте /start")
+    print("📋 Доступные команды:")
+    print("  /analyze - анализ товаров")
+    print("  /upload - загрузка своих категорий")
+    print("  /criteria - настройка критериев")
+    print("  /update - обновление категорий Ozon")
+    print("  /status - статус и лимиты")
+    print("  /list - список сохранённых категорий")
+    print("  /admin - панель администратора")
+    print("  /update_commissions - обновить комиссии (админ)")  # НОВОЕ
     print("=" * 60)
 
     app.run_polling()
