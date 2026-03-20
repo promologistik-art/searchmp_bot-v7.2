@@ -25,13 +25,107 @@ import time
 class CommissionCalculator:
     """
     Калькулятор комиссий на основе файла comcat.xlsx
-    Использует ГОТОВЫЕ ставки из файла, не пытаясь угадать категорию
     """
     
     def __init__(self, commissions_file: str = 'cache/templates/comcat.xlsx'):
         self.commissions_file = Path(commissions_file)
         self.commissions_df = None
-        self.commission_map = {}  # Для быстрого поиска
+        self.commission_map = {}
+        
+        # Карта соответствия категорий (MPSTATS -> название в файле комиссий)
+        self.category_mapping = {
+            # Канцелярские товары и подкатегории
+            'Канцелярские товары': 'Канцелярские товары',
+            'Офисные принадлежности': 'Канцелярские товары',
+            'Бумажная продукция': 'Бумага',
+            'Письменные принадлежности': 'Письменные принадлежности',
+            'Канцелярские принадлежности': 'Канцелярские товары',
+            
+            # Автотовары
+            'Автоаксессуары и принадлежности': 'Автоаксессуары и принадлежности',
+            'Автосвет': 'Автосвет',
+            'Автозапчасти': 'Автозапчасти',
+            'Шины и диски': 'Шины и диски',
+            'Масла и автохимия': 'Масла и автохимия',
+            'Уход за автомобилем': 'Уход за автомобилем',
+            'Электроника для авто': 'Электроника для авто',
+            'Автомобильные держатели': 'Автомобильные держатели',
+            'Инструменты и оборудование для авто': 'Инструменты и оборудование',
+            
+            # Книги и творчество
+            'Досуг и творчество': 'Хобби и творчество',
+            'Хобби и творчество': 'Хобби и творчество',
+            'Книги': 'Книги',
+            'Детская литература': 'Детям и родителям',
+            'Развивающие книги': 'Детям и родителям',
+            
+            # Строительство
+            'Строительство и ремонт': 'Строительство и ремонт',
+            'Инструменты': 'Инструменты',
+            'Электроинструменты': 'Электроинструменты',
+            'Расходные материалы': 'Расходные материалы и оснастка',
+            'Крепеж и фурнитура': 'Крепеж и фурнитура',
+            'Средства защиты': 'Средства защиты и пожаротушения',
+            
+            # Дом и сад
+            'Дом и сад': 'Дом и сад',
+            'Текстиль': 'Текстиль',
+            'Посуда': 'Посуда и кухонные принадлежности',
+            'Освещение': 'Освещение',
+            'Хозяйственные товары': 'Хозяйственные товары',
+            
+            # Детские товары
+            'Детские товары': 'Детские товары',
+            'Игрушки и игры': 'Игрушки и игры',
+            'Детская одежда': 'Детская одежда',
+            'Товары для мам': 'Товары для мам',
+            'Детское питание': 'Детское питание',
+            
+            # Красота и здоровье
+            'Красота и здоровье': 'Красота и здоровье',
+            'Уход за волосами': 'Уход за волосами',
+            'Уход за лицом': 'Уход за лицом',
+            'Уход за телом': 'Уход за телом',
+            'Парфюмерия': 'Парфюмерия',
+            'Макияж': 'Макияж',
+            
+            # Одежда и обувь
+            'Одежда': 'Одежда',
+            'Женщинам': 'Женщинам',
+            'Мужчинам': 'Мужчинам',
+            'Обувь': 'Обувь',
+            'Аксессуары': 'Аксессуары',
+            
+            # Спорт
+            'Спорт и отдых': 'Спорт и отдых',
+            'Тренажеры и фитнес': 'Тренажеры',
+            'Спортивное питание': 'Спортивное питание',
+            'Велоспорт': 'Велоспорт',
+            'Туризм, рыбалка, охота': 'Туризм, рыбалка, охота',
+            
+            # Продукты
+            'Продукты питания': 'Продукты питания',
+            'Бакалея': 'Бакалея',
+            'Молочные продукты': 'Молочные продукты, сыры и яйца',
+            'Напитки': 'Соки, воды и напитки',
+            
+            # Электроника
+            'Электроника': 'Электроника',
+            'Бытовая техника': 'Бытовая техника',
+            'Телефоны и смарт-часы': 'Телефоны и смарт-часы',
+            'Компьютеры и комплектующие': 'Компьютеры и комплектующие',
+            'Наушники и аудиотехника': 'Наушники и аудиотехника',
+            'Фото и видеокамеры': 'Фото и видеокамеры',
+            
+            # Зоотовары
+            'Товары для животных': 'Товары для животных',
+            'Для кошек': 'Для кошек',
+            'Для собак': 'Для собак',
+            'Для грызунов': 'Для грызунов и хорьков',
+            'Для птиц': 'Для птиц',
+            'Для рыб и рептилий': 'Для рыб и рептилий',
+        }
+        
         self._load_commissions()
     
     def _load_commissions(self):
@@ -47,8 +141,7 @@ class CommissionCalculator:
                 sheet_name='Категории'
             )
             
-            # Создаём карту для быстрого поиска по названию категории
-            # Приводим к нижнему регистру для регистронезависимого поиска
+            # Создаём карту для быстрого поиска
             for _, row in self.commissions_df.iterrows():
                 cat_name = str(row.get('Категория', '')).strip().lower()
                 if cat_name and cat_name not in self.commission_map:
@@ -60,53 +153,59 @@ class CommissionCalculator:
                         '5000-10000': row.get('Комиссия свыше 5000 до 10 000 руб.', 0),
                         'свыше 10000': row.get('Комиссия свыше 10 000 руб.', 0)
                     }
+                
+                # Также добавляем по "Полный путь"
+                full_path = str(row.get('Полный путь', '')).strip().lower()
+                if full_path and full_path not in self.commission_map:
+                    self.commission_map[full_path] = self.commission_map[cat_name]
             
             logger.info(f"✅ Загружено {len(self.commissions_df)} записей о комиссиях")
-            logger.info(f"✅ Создана карта из {len(self.commission_map)} уникальных категорий")
+            logger.info(f"✅ Создана карта из {len(self.commission_map)} категорий")
             
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки комиссий: {e}")
             self.commissions_df = None
             self.commission_map = {}
     
+    def _find_category_key(self, user_category: str) -> str:
+        """
+        Находит ключ для поиска в карте комиссий
+        """
+        # Пробуем прямое соответствие из маппинга
+        if user_category in self.category_mapping:
+            mapped = self.category_mapping[user_category]
+            logger.info(f"🔄 Маппинг: '{user_category}' -> '{mapped}'")
+            return mapped.lower()
+        
+        # Пробуем прямой поиск
+        cat_lower = user_category.lower()
+        if cat_lower in self.commission_map:
+            return cat_lower
+        
+        # Пробуем поиск по вхождению
+        for key in self.commission_map.keys():
+            if cat_lower in key or key in cat_lower:
+                logger.info(f"🔍 Частичное совпадение: '{user_category}' ~ '{key}'")
+                return key
+        
+        logger.warning(f"❌ Категория '{user_category}' не найдена в справочнике")
+        return None
+    
     def get_commission(self, user_category: str, price: float) -> float:
         """
-        Возвращает комиссию для категории (которую выбрал пользователь) и цены
-        
-        Args:
-            user_category: категория, которую выбрал пользователь (например, "Женщинам")
-            price: цена товара в рублях
-            
-        Returns:
-            float: комиссия в рублях
+        Возвращает комиссию для категории пользователя и цены
         """
         if not self.commission_map:
             logger.warning("⚠️ Карта комиссий пуста")
             return 0.0
         
         try:
-            # Нормализуем название категории пользователя
-            cat_key = user_category.strip().lower()
+            cat_key = self._find_category_key(user_category)
+            if not cat_key:
+                return 0.0
             
-            # Прямой поиск по категории пользователя
-            if cat_key in self.commission_map:
-                commission_data = self.commission_map[cat_key]
-                logger.info(f"✅ Категория '{user_category}' найдена в справочнике")
-            else:
-                # Если точного совпадения нет, пробуем частичный поиск
-                found = False
-                for db_cat, data in self.commission_map.items():
-                    if cat_key in db_cat or db_cat in cat_key:
-                        commission_data = data
-                        logger.info(f"✅ Частичное совпадение: '{user_category}' ~ '{db_cat}'")
-                        found = True
-                        break
-                
-                if not found:
-                    logger.warning(f"❌ Категория '{user_category}' не найдена в справочнике")
-                    return 0.0
+            commission_data = self.commission_map[cat_key]
             
-            # Определяем ставку в зависимости от цены
             if price <= 100:
                 rate = commission_data['до 100']
             elif price <= 300:
@@ -120,15 +219,12 @@ class CommissionCalculator:
             else:
                 rate = commission_data['свыше 10000']
             
-            # Проверяем, что ставка получена
             if pd.isna(rate) or rate == 0:
-                logger.warning(f"⚠️ Ставка для категории '{user_category}' при цене {price} равна 0")
+                logger.warning(f"⚠️ Ставка для '{user_category}' при цене {price} равна 0")
                 return 0.0
             
-            # Конвертируем процент в рубли
             commission_rub = price * float(rate) / 100
-            
-            logger.info(f"💰 Комиссия: {rate}% = {commission_rub:.2f} руб")
+            logger.info(f"💰 Комиссия для '{user_category}': {rate}% = {commission_rub:.2f} руб")
             return round(commission_rub, 2)
             
         except Exception as e:
@@ -136,7 +232,7 @@ class CommissionCalculator:
             return 0.0
 
 
-# Создаём глобальный экземпляр калькулятора (загрузится один раз при старте)
+# Создаём глобальный экземпляр калькулятора
 _commission_calculator = None
 
 def get_commission_calculator():
@@ -262,7 +358,6 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
     user_id = user.id
     username = user.username or ""
 
-    # Уведомляем админа о запуске анализа
     await notify_admin_analyze(update, context)
 
     can_use, status = can_use_bot(user_id, admin_ids, admin_usernames, username)
@@ -304,22 +399,20 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
         await msg.reply_text("❌ Сначала выберите категории")
         return
 
-    # Проверка лимита в 50 категорий для обычных пользователей
     if user_id not in admin_ids and username not in admin_usernames and not get_user_data(user_id).get('is_admin'):
         if len(selected) > 10:
             await msg.reply_text(
                 "❌ **Превышен лимит категорий**\n\n"
                 f"Вы выбрали {len(selected)} категорий.\n"
                 "Для обычных пользователей доступно не более 10 категорий за один анализ.\n\n"
-                "💡 Совет: Разбейте список на несколько частей:.\n"
+                "💡 Совет: Разбейте список на несколько частей.\n"
                 "👑 Администраторы и подписчики могут анализировать любое количество."
             )
             return
 
     increment_query_count(user_id, admin_ids, admin_usernames, username)
 
-    # Расчет примерного времени
-    estimated_minutes = len(selected) * 6 // 60  # 6 секунд на категорию
+    estimated_minutes = len(selected) * 6 // 60
     if estimated_minutes < 1:
         time_msg = "менее 1 минуты"
     else:
@@ -336,23 +429,20 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
     errors = []
     viewed = load_viewed_categories()
 
-    # Для замера времени
     start_time = time.time()
 
     session = create_session_with_retries()
     
-    # === ПОЛУЧАЕМ КАЛЬКУЛЯТОР КОМИССИЙ ===
+    # Получаем калькулятор комиссий
     commission_calc = get_commission_calculator()
-    # ====================================
 
     for idx, num in enumerate(sorted(selected), 1):
         cat = categories[num - 1]
-        category_name = cat.get('name', '')  # Название категории, которое выбрал пользователь
+        category_name = cat.get('name', '')
         path = cat.get('path', '')
 
         viewed.add(num)
 
-        # Расчет прогресса и времени
         progress = (idx / len(selected)) * 100
         elapsed = time.time() - start_time
         avg_time_per_item = elapsed / idx if idx > 0 else 0
@@ -384,12 +474,10 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
             if results:
                 for r in results:
                     r['category'] = category_name
-                    # === ВАЖНО: Используем ГОТОВУЮ категорию пользователя ===
                     r['commission'] = commission_calc.get_commission(
-                        user_category=category_name,  # Категория, которую выбрал пользователь
+                        user_category=category_name,
                         price=r['price']
                     )
-                    # ======================================================
                 all_results.extend(results)
                 good += 1
             else:
@@ -444,7 +532,6 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
     else:
         status_info = f"🆓 Бесплатных запросов: {free_used}/{free_total}"
 
-    # Итоговое время
     total_time = time.time() - start_time
 
     await context.bot.send_message(
