@@ -64,7 +64,7 @@ def _apply_fixed_column_widths_like_example(worksheet):
         "G": 13.0,
         "H": 15.0,
         "I": 10.0,
-        "J": 13.0,
+        "J": 12.0,
         "K": 12.140625,
         "L": 14.0,
         "M": 13.0,
@@ -72,6 +72,7 @@ def _apply_fixed_column_widths_like_example(worksheet):
         "O": 13.0,
         "P": 10.5703125,
         "Q": 8.0,
+        "R": 8.0,
     }
     for col, width in widths.items():
         worksheet.column_dimensions[col].width = width
@@ -110,21 +111,23 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
         # Пользовательские/расчётные колонки
         df["Кол-во к закупке"] = ""
         df["Себестоимость"] = ""
-        df["Комиссия"] = df.get("commission", 0)  # Берем уже рассчитанную комиссию
+        df["% Комиссии"] = df.get("commission_percent", "")  # Процент комиссии
+        df["Комиссия, р"] = df.get("commission", 0)  # Комиссия в рублях
         df["Логистика"] = ""
-        df["Эквайринг"] = ""
-        df["Всего расходы"] = ""
+        df["Эквайринг, р"] = ""  # Переименовываем
+        df["Всего расходы, р"] = ""
         df["Закуп итого, р"] = ""
         df["Прибыль на ед, р"] = ""
         df["Прибыль на партию, р"] = ""
-        df["Маржа"] = ""
-        df["ROI"] = ""
+        df["Маржа, %"] = ""
+        df["ROI, %"] = ""
 
-        # Удаляем временный столбец commission, если он был
-        if "commission" in df.columns and "Комиссия" in df.columns:
-            df = df.drop(columns=["commission"])
+        # Удаляем временные столбцы
+        for col in ["commission", "commission_percent"]:
+            if col in df.columns:
+                df = df.drop(columns=[col])
 
-        # Итоговый порядок столбцов
+        # Итоговый порядок столбцов (новый порядок)
         col_order = [
             "Ссылка на Ozon",
             "Категория",
@@ -134,15 +137,16 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
             "Количество конкурентов",
             "Кол-во к закупке",
             "Себестоимость",
-            "Комиссия",
+            "% Комиссии",
+            "Комиссия, р",
             "Логистика",
-            "Эквайринг",
-            "Всего расходы",
+            "Эквайринг, р",
+            "Всего расходы, р",
             "Закуп итого, р",
             "Прибыль на ед, р",
             "Прибыль на партию, р",
-            "Маржа",
-            "ROI",
+            "Маржа, %",
+            "ROI, %",
         ]
         df = df[[c for c in col_order if c in df.columns]]
 
@@ -166,15 +170,16 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
             c_price = col_idx("Цена, р")
             c_qty = col_idx("Кол-во к закупке")
             c_cogs = col_idx("Себестоимость")
-            c_fee = col_idx("Комиссия")
+            c_commission_percent = col_idx("% Комиссии")
+            c_commission_rub = col_idx("Комиссия, р")
             c_log = col_idx("Логистика")
-            c_acq = col_idx("Эквайринг")
-            c_total = col_idx("Всего расходы")
+            c_acq = col_idx("Эквайринг, р")
+            c_total = col_idx("Всего расходы, р")
             c_buy_total = col_idx("Закуп итого, р")
             c_profit_unit = col_idx("Прибыль на ед, р")
             c_profit_batch = col_idx("Прибыль на партию, р")
-            c_margin = col_idx("Маржа")
-            c_roi = col_idx("ROI")
+            c_margin = col_idx("Маржа, %")
+            c_roi = col_idx("ROI, %")
             c_rev30 = col_idx("Выручка за 30 дней")
 
             for row in range(2, worksheet.max_row + 1):
@@ -186,16 +191,29 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                         cell.value = f'=HYPERLINK("{url}","{url}")'
                         cell.style = "Hyperlink"
 
-                # Всего расходы (на единицу)
-                if c_total is not None and None not in (c_cogs, c_fee, c_log, c_acq):
+                # Эквайринг = Цена * 1.5%
+                if c_acq is not None and c_price is not None:
                     worksheet.cell(
                         row=row,
-                        column=c_total,
-                        value=f"={get_column_letter(c_cogs)}{row}"
-                              f"+{get_column_letter(c_fee)}{row}"
-                              f"+{get_column_letter(c_log)}{row}"
-                              f"+{get_column_letter(c_acq)}{row}",
+                        column=c_acq,
+                        value=f"={get_column_letter(c_price)}{row}*0.015",
                     )
+
+                # Всего расходы (на единицу)
+                # Собираем все колонки, которые есть
+                expense_columns = []
+                if c_cogs is not None:
+                    expense_columns.append(get_column_letter(c_cogs))
+                if c_commission_rub is not None:
+                    expense_columns.append(get_column_letter(c_commission_rub))
+                if c_log is not None:
+                    expense_columns.append(get_column_letter(c_log))
+                if c_acq is not None:
+                    expense_columns.append(get_column_letter(c_acq))
+                
+                if c_total is not None and expense_columns:
+                    formula = "+".join([f"{col}{row}" for col in expense_columns])
+                    worksheet.cell(row=row, column=c_total, value=f"={formula}")
 
                 # Закуп итого (на партию)
                 if c_buy_total is not None and None not in (c_total, c_qty):
@@ -248,11 +266,11 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
             if c_rev30 is not None:
                 for row in range(2, worksheet.max_row + 1):
                     worksheet.cell(row=row, column=c_rev30).number_format = rub_fmt
-            for c in [c_cogs, c_fee, c_log, c_acq, c_total, c_buy_total, c_profit_unit, c_profit_batch]:
+            for c in [c_cogs, c_commission_rub, c_log, c_acq, c_total, c_buy_total, c_profit_unit, c_profit_batch]:
                 if c is not None:
                     for row in range(2, worksheet.max_row + 1):
                         worksheet.cell(row=row, column=c).number_format = rub_fmt
-            for c in [c_margin, c_roi]:
+            for c in [c_commission_percent, c_margin, c_roi]:
                 if c is not None:
                     for row in range(2, worksheet.max_row + 1):
                         worksheet.cell(row=row, column=c).number_format = pct_fmt

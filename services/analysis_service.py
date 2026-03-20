@@ -49,16 +49,16 @@ class CommissionCalculator:
             logger.error(f"❌ Ошибка загрузки комиссий: {e}")
             self.commissions_df = None
     
-    def get_commission(self, category_name: str, price: float) -> float:
+    def get_commission_percent(self, category_name: str, price: float) -> float:
         """
-        Возвращает комиссию для категории и цены (как ВПР в Excel)
+        Возвращает ПРОЦЕНТ комиссии для категории и цены
         
         Args:
             category_name: название категории
             price: цена товара в рублях
             
         Returns:
-            float: сумма комиссии в рублях
+            float: процент комиссии (например, 14.0) или 0.0 если не найдено
         """
         if self.commissions_df is None:
             return 0.0
@@ -92,13 +92,28 @@ class CommissionCalculator:
             if pd.isna(rate):
                 return 0.0
             
-            # Конвертируем процент в рубли
-            commission_rub = price * float(rate) / 100
-            return round(commission_rub, 2)
+            # Возвращаем процент
+            return float(rate)
             
         except Exception as e:
-            logger.error(f"❌ Ошибка расчёта комиссии для {category_name}: {e}")
+            logger.error(f"❌ Ошибка расчёта процента комиссии для {category_name}: {e}")
             return 0.0
+    
+    def get_commission_rub(self, category_name: str, price: float) -> float:
+        """
+        Возвращает комиссию в рублях
+        
+        Args:
+            category_name: название категории
+            price: цена товара в рублях
+            
+        Returns:
+            float: сумма комиссии в рублях
+        """
+        rate = self.get_commission_percent(category_name, price)
+        if rate == 0.0:
+            return 0.0
+        return round(price * rate / 100, 2)
 
 
 # Глобальный экземпляр калькулятора
@@ -347,9 +362,11 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
             if results:
                 for r in results:
                     r['category'] = category_name
-                    # РАСЧЁТ КОМИССИИ
-                    commission = commission_calc.get_commission(category_name, r['price'])
-                    r['commission'] = commission
+                    # РАСЧЁТ КОМИССИИ (процент и рубли)
+                    commission_percent = commission_calc.get_commission_percent(category_name, r['price'])
+                    commission_rub = commission_calc.get_commission_rub(category_name, r['price'])
+                    r['commission_percent'] = commission_percent   # для колонки "% Комиссии"
+                    r['commission'] = commission_rub               # для колонки "Комиссия, р"
                 all_results.extend(results)
                 good += 1
             else:
