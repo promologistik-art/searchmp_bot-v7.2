@@ -51,38 +51,25 @@ class CommissionCalculator:
     
     def get_commission(self, category_name: str, price: float) -> float:
         """
-        Возвращает комиссию для категории и цены
+        Возвращает комиссию для категории и цены (как ВПР в Excel)
         
         Args:
-            category_name: название категории (например, "Канцелярские товары")
+            category_name: название категории
             price: цена товара в рублях
             
         Returns:
             float: сумма комиссии в рублях
         """
         if self.commissions_df is None:
-            logger.warning("⚠️ Данные комиссий не загружены")
             return 0.0
         
         try:
-            # Ищем категорию по названию (регистронезависимо)
-            # Нормализуем для поиска
+            # Нормализуем для поиска (как ВПР - точное совпадение по категории)
             cat_normalized = category_name.strip().lower()
             
-            # Поиск по колонке "Категория"
-            mask = self.commissions_df['Категория'].str.lower().str.contains(
-                cat_normalized, 
-                na=False
-            )
+            # Поиск по столбцу "Категория" (как ВПР в Excel)
+            mask = self.commissions_df['Категория'].str.lower().str.strip() == cat_normalized
             row = self.commissions_df[mask]
-            
-            # Если не нашли, пробуем поиск по "Полный путь"
-            if row.empty:
-                mask = self.commissions_df['Полный путь'].str.lower().str.contains(
-                    cat_normalized, 
-                    na=False
-                )
-                row = self.commissions_df[mask]
             
             if row.empty:
                 logger.debug(f"Категория не найдена: {category_name}")
@@ -103,7 +90,6 @@ class CommissionCalculator:
                 rate = row.iloc[0]['Комиссия свыше 10 000 руб.']
             
             if pd.isna(rate):
-                logger.debug(f"Ставка не найдена для {category_name} при цене {price}")
                 return 0.0
             
             # Конвертируем процент в рубли
@@ -314,9 +300,14 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
     start_time = time.time()
     session = create_session_with_retries()
     
-    # ========== ИНИЦИАЛИЗАЦИЯ КАЛЬКУЛЯТОРА КОМИССИЙ ==========
+    # ИНИЦИАЛИЗАЦИЯ КАЛЬКУЛЯТОРА КОМИССИЙ
     commission_calc = get_commission_calculator()
-    # ===========================================================
+    
+    # Логируем статус загрузки комиссий
+    if commission_calc.commissions_df is not None:
+        logger.info(f"✅ Комиссии загружены: {len(commission_calc.commissions_df)} записей")
+    else:
+        logger.error("❌ Комиссии НЕ загружены!")
 
     for idx, num in enumerate(sorted(selected), 1):
         cat = categories[num - 1]
@@ -356,12 +347,9 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
             if results:
                 for r in results:
                     r['category'] = category_name
-                    # ========== РАСЧЁТ КОМИССИИ ==========
-                    r['commission'] = commission_calc.get_commission(
-                        category_name, 
-                        r['price']
-                    )
-                    # ===================================
+                    # РАСЧЁТ КОМИССИИ
+                    commission = commission_calc.get_commission(category_name, r['price'])
+                    r['commission'] = commission
                 all_results.extend(results)
                 good += 1
             else:
