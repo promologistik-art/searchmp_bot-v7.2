@@ -3,6 +3,7 @@ from typing import List, Dict, Optional
 import requests
 import pandas as pd
 from pathlib import Path
+import time
 
 from config import MPSTATS_API_URL, HEADERS, logger, ADMIN_USERNAMES
 
@@ -19,8 +20,6 @@ from services.excel_service import create_excel_report
 from bot.keyboards import get_end_keyboard, get_after_analysis_keyboard
 from admin_notify import notify_admin_analyze
 
-import time
-
 
 class CommissionCalculator:
     """
@@ -30,102 +29,6 @@ class CommissionCalculator:
     def __init__(self, commissions_file: str = 'cache/templates/comcat.xlsx'):
         self.commissions_file = Path(commissions_file)
         self.commissions_df = None
-        self.commission_map = {}
-        
-        # Карта соответствия категорий (MPSTATS -> название в файле комиссий)
-        self.category_mapping = {
-            # Канцелярские товары и подкатегории
-            'Канцелярские товары': 'Канцелярские товары',
-            'Офисные принадлежности': 'Канцелярские товары',
-            'Бумажная продукция': 'Бумага',
-            'Письменные принадлежности': 'Письменные принадлежности',
-            'Канцелярские принадлежности': 'Канцелярские товары',
-            
-            # Автотовары
-            'Автоаксессуары и принадлежности': 'Автоаксессуары и принадлежности',
-            'Автосвет': 'Автосвет',
-            'Автозапчасти': 'Автозапчасти',
-            'Шины и диски': 'Шины и диски',
-            'Масла и автохимия': 'Масла и автохимия',
-            'Уход за автомобилем': 'Уход за автомобилем',
-            'Электроника для авто': 'Электроника для авто',
-            'Автомобильные держатели': 'Автомобильные держатели',
-            'Инструменты и оборудование для авто': 'Инструменты и оборудование',
-            
-            # Книги и творчество
-            'Досуг и творчество': 'Хобби и творчество',
-            'Хобби и творчество': 'Хобби и творчество',
-            'Книги': 'Книги',
-            'Детская литература': 'Детям и родителям',
-            'Развивающие книги': 'Детям и родителям',
-            
-            # Строительство
-            'Строительство и ремонт': 'Строительство и ремонт',
-            'Инструменты': 'Инструменты',
-            'Электроинструменты': 'Электроинструменты',
-            'Расходные материалы': 'Расходные материалы и оснастка',
-            'Крепеж и фурнитура': 'Крепеж и фурнитура',
-            'Средства защиты': 'Средства защиты и пожаротушения',
-            
-            # Дом и сад
-            'Дом и сад': 'Дом и сад',
-            'Текстиль': 'Текстиль',
-            'Посуда': 'Посуда и кухонные принадлежности',
-            'Освещение': 'Освещение',
-            'Хозяйственные товары': 'Хозяйственные товары',
-            
-            # Детские товары
-            'Детские товары': 'Детские товары',
-            'Игрушки и игры': 'Игрушки и игры',
-            'Детская одежда': 'Детская одежда',
-            'Товары для мам': 'Товары для мам',
-            'Детское питание': 'Детское питание',
-            
-            # Красота и здоровье
-            'Красота и здоровье': 'Красота и здоровье',
-            'Уход за волосами': 'Уход за волосами',
-            'Уход за лицом': 'Уход за лицом',
-            'Уход за телом': 'Уход за телом',
-            'Парфюмерия': 'Парфюмерия',
-            'Макияж': 'Макияж',
-            
-            # Одежда и обувь
-            'Одежда': 'Одежда',
-            'Женщинам': 'Женщинам',
-            'Мужчинам': 'Мужчинам',
-            'Обувь': 'Обувь',
-            'Аксессуары': 'Аксессуары',
-            
-            # Спорт
-            'Спорт и отдых': 'Спорт и отдых',
-            'Тренажеры и фитнес': 'Тренажеры',
-            'Спортивное питание': 'Спортивное питание',
-            'Велоспорт': 'Велоспорт',
-            'Туризм, рыбалка, охота': 'Туризм, рыбалка, охота',
-            
-            # Продукты
-            'Продукты питания': 'Продукты питания',
-            'Бакалея': 'Бакалея',
-            'Молочные продукты': 'Молочные продукты, сыры и яйца',
-            'Напитки': 'Соки, воды и напитки',
-            
-            # Электроника
-            'Электроника': 'Электроника',
-            'Бытовая техника': 'Бытовая техника',
-            'Телефоны и смарт-часы': 'Телефоны и смарт-часы',
-            'Компьютеры и комплектующие': 'Компьютеры и комплектующие',
-            'Наушники и аудиотехника': 'Наушники и аудиотехника',
-            'Фото и видеокамеры': 'Фото и видеокамеры',
-            
-            # Зоотовары
-            'Товары для животных': 'Товары для животных',
-            'Для кошек': 'Для кошек',
-            'Для собак': 'Для собак',
-            'Для грызунов': 'Для грызунов и хорьков',
-            'Для птиц': 'Для птиц',
-            'Для рыб и рептилий': 'Для рыб и рептилий',
-        }
-        
         self._load_commissions()
     
     def _load_commissions(self):
@@ -140,99 +43,79 @@ class CommissionCalculator:
                 self.commissions_file, 
                 sheet_name='Категории'
             )
-            
-            # Создаём карту для быстрого поиска
-            for _, row in self.commissions_df.iterrows():
-                cat_name = str(row.get('Категория', '')).strip().lower()
-                if cat_name and cat_name not in self.commission_map:
-                    self.commission_map[cat_name] = {
-                        'до 100': row.get('Комиссия до 100 руб.', 0),
-                        '100-300': row.get('Комиссия свыше 100 до 300 руб.', 0),
-                        '300-1500': row.get('Комиссия свыше 300 до 1500 руб.', 0),
-                        '1500-5000': row.get('Комиссия свыше 1500 до 5000 руб.', 0),
-                        '5000-10000': row.get('Комиссия свыше 5000 до 10 000 руб.', 0),
-                        'свыше 10000': row.get('Комиссия свыше 10 000 руб.', 0)
-                    }
-                
-                # Также добавляем по "Полный путь"
-                full_path = str(row.get('Полный путь', '')).strip().lower()
-                if full_path and full_path not in self.commission_map:
-                    self.commission_map[full_path] = self.commission_map[cat_name]
-            
             logger.info(f"✅ Загружено {len(self.commissions_df)} записей о комиссиях")
-            logger.info(f"✅ Создана карта из {len(self.commission_map)} категорий")
             
         except Exception as e:
             logger.error(f"❌ Ошибка загрузки комиссий: {e}")
             self.commissions_df = None
-            self.commission_map = {}
     
-    def _find_category_key(self, user_category: str) -> str:
+    def get_commission(self, category_name: str, price: float) -> float:
         """
-        Находит ключ для поиска в карте комиссий
-        """
-        # Пробуем прямое соответствие из маппинга
-        if user_category in self.category_mapping:
-            mapped = self.category_mapping[user_category]
-            logger.info(f"🔄 Маппинг: '{user_category}' -> '{mapped}'")
-            return mapped.lower()
+        Возвращает комиссию для категории и цены
         
-        # Пробуем прямой поиск
-        cat_lower = user_category.lower()
-        if cat_lower in self.commission_map:
-            return cat_lower
-        
-        # Пробуем поиск по вхождению
-        for key in self.commission_map.keys():
-            if cat_lower in key or key in cat_lower:
-                logger.info(f"🔍 Частичное совпадение: '{user_category}' ~ '{key}'")
-                return key
-        
-        logger.warning(f"❌ Категория '{user_category}' не найдена в справочнике")
-        return None
-    
-    def get_commission(self, user_category: str, price: float) -> float:
+        Args:
+            category_name: название категории (например, "Канцелярские товары")
+            price: цена товара в рублях
+            
+        Returns:
+            float: сумма комиссии в рублях
         """
-        Возвращает комиссию для категории пользователя и цены
-        """
-        if not self.commission_map:
-            logger.warning("⚠️ Карта комиссий пуста")
+        if self.commissions_df is None:
+            logger.warning("⚠️ Данные комиссий не загружены")
             return 0.0
         
         try:
-            cat_key = self._find_category_key(user_category)
-            if not cat_key:
+            # Ищем категорию по названию (регистронезависимо)
+            # Нормализуем для поиска
+            cat_normalized = category_name.strip().lower()
+            
+            # Поиск по колонке "Категория"
+            mask = self.commissions_df['Категория'].str.lower().str.contains(
+                cat_normalized, 
+                na=False
+            )
+            row = self.commissions_df[mask]
+            
+            # Если не нашли, пробуем поиск по "Полный путь"
+            if row.empty:
+                mask = self.commissions_df['Полный путь'].str.lower().str.contains(
+                    cat_normalized, 
+                    na=False
+                )
+                row = self.commissions_df[mask]
+            
+            if row.empty:
+                logger.debug(f"Категория не найдена: {category_name}")
                 return 0.0
             
-            commission_data = self.commission_map[cat_key]
-            
+            # Определяем колонку в зависимости от цены
             if price <= 100:
-                rate = commission_data['до 100']
+                rate = row.iloc[0]['Комиссия до 100 руб.']
             elif price <= 300:
-                rate = commission_data['100-300']
+                rate = row.iloc[0]['Комиссия свыше 100 до 300 руб.']
             elif price <= 1500:
-                rate = commission_data['300-1500']
+                rate = row.iloc[0]['Комиссия свыше 300 до 1500 руб.']
             elif price <= 5000:
-                rate = commission_data['1500-5000']
+                rate = row.iloc[0]['Комиссия свыше 1500 до 5000 руб.']
             elif price <= 10000:
-                rate = commission_data['5000-10000']
+                rate = row.iloc[0]['Комиссия свыше 5000 до 10 000 руб.']
             else:
-                rate = commission_data['свыше 10000']
+                rate = row.iloc[0]['Комиссия свыше 10 000 руб.']
             
-            if pd.isna(rate) or rate == 0:
-                logger.warning(f"⚠️ Ставка для '{user_category}' при цене {price} равна 0")
+            if pd.isna(rate):
+                logger.debug(f"Ставка не найдена для {category_name} при цене {price}")
                 return 0.0
             
+            # Конвертируем процент в рубли
             commission_rub = price * float(rate) / 100
-            logger.info(f"💰 Комиссия для '{user_category}': {rate}% = {commission_rub:.2f} руб")
             return round(commission_rub, 2)
             
         except Exception as e:
-            logger.error(f"❌ Ошибка расчёта комиссии для {user_category}: {e}")
+            logger.error(f"❌ Ошибка расчёта комиссии для {category_name}: {e}")
             return 0.0
 
 
-# Создаём глобальный экземпляр калькулятора
+# Глобальный экземпляр калькулятора
 _commission_calculator = None
 
 def get_commission_calculator():
@@ -246,7 +129,6 @@ def get_commission_calculator():
 async def get_category_items(path: str, session) -> List[Dict]:
     """Получает данные по категории"""
     try:
-
         url = f"{MPSTATS_API_URL}/oz/get/category"
 
         d2 = datetime.now()
@@ -430,11 +312,11 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
     viewed = load_viewed_categories()
 
     start_time = time.time()
-
     session = create_session_with_retries()
     
-    # Получаем калькулятор комиссий
+    # ========== ИНИЦИАЛИЗАЦИЯ КАЛЬКУЛЯТОРА КОМИССИЙ ==========
     commission_calc = get_commission_calculator()
+    # ===========================================================
 
     for idx, num in enumerate(sorted(selected), 1):
         cat = categories[num - 1]
@@ -474,10 +356,12 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
             if results:
                 for r in results:
                     r['category'] = category_name
+                    # ========== РАСЧЁТ КОМИССИИ ==========
                     r['commission'] = commission_calc.get_commission(
-                        user_category=category_name,
-                        price=r['price']
+                        category_name, 
+                        r['price']
                     )
+                    # ===================================
                 all_results.extend(results)
                 good += 1
             else:
