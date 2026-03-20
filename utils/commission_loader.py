@@ -20,7 +20,7 @@ class CommissionLoader:
     
     # Прямая публичная ссылка на RAW-файл в GitHub
     # ВАЖНО: замените v7.2 на актуальную версию вашего репозитория
-    GITHUB_RAW_URL = "https://raw.githubusercontent.com/promologistik-art/searchmp_bot-v7.2/main/cache/templates/comcat.xlsx"
+    GITHUB_RAW_URL = "https://raw.githubusercontent.com/promologistik-art/searchmp_bot-v7.3/main/cache/templates/comcat.xlsx"
     
     def __init__(self, local_path):
         """
