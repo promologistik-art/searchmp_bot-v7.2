@@ -1,8 +1,11 @@
 import io
 import pandas as pd
+import logging
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill, Alignment
 from typing import List, Dict
+
+logger = logging.getLogger(__name__)
 
 
 def _autofit_column_widths(worksheet):
@@ -31,7 +34,7 @@ def _apply_header_style(worksheet):
 
 
 def _apply_user_input_column_style(worksheet, header_names: list[str]):
-    # Excel-like light green fill for input columns
+    """Excel-like light green fill for input columns"""
     green_fill = PatternFill("solid", fgColor="FFC6EFCE")
     alignment = Alignment(vertical="center")
 
@@ -40,11 +43,9 @@ def _apply_user_input_column_style(worksheet, header_names: list[str]):
         if name not in headers:
             continue
         col = headers.index(name) + 1
-        # header cell
         hcell = worksheet.cell(1, col)
         hcell.fill = green_fill
         hcell.alignment = Alignment(vertical="center", wrap_text=True)
-        # column cells
         for row in range(2, worksheet.max_row + 1):
             cell = worksheet.cell(row, col)
             cell.fill = green_fill
@@ -52,7 +53,7 @@ def _apply_user_input_column_style(worksheet, header_names: list[str]):
 
 
 def _apply_fixed_column_widths_like_example(worksheet):
-    # Ширины столбцов сняты с файла-примера ozon_11cats_20260312_104222.xlsx
+    """Фиксированные ширины столбцов"""
     widths = {
         "A": 15.85546875,
         "B": 19.0,
@@ -81,6 +82,11 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
     if not results:
         df = pd.DataFrame([{'Статус': 'Нет данных'}])
     else:
+        # Логируем наличие комиссий в результатах
+        if results:
+            sample = results[0]
+            logger.info(f"Пример данных: категория={sample.get('category')}, комиссия={sample.get('commission')}")
+        
         df = pd.DataFrame(results)
 
         # Приводим входные ключи к новой структуре отчёта
@@ -92,7 +98,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
             "competitors": "Количество конкурентов",
         })
 
-        # Удаляем столбцы Бренд и Продавец (если присутствуют)
+        # Удаляем столбцы Бренд и Продавец
         for drop_col in ("brand", "seller"):
             if drop_col in df.columns:
                 df = df.drop(columns=[drop_col])
@@ -104,7 +110,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
         # Пользовательские/расчётные колонки
         df["Кол-во к закупке"] = ""
         df["Себестоимость"] = ""
-        df["Комиссия"] = ""
+        df["Комиссия"] = df.get("commission", 0)  # Берем уже рассчитанную комиссию
         df["Логистика"] = ""
         df["Эквайринг"] = ""
         df["Всего расходы"] = ""
@@ -114,7 +120,11 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
         df["Маржа"] = ""
         df["ROI"] = ""
 
-        # Итоговый порядок столбцов (как в твоём примере)
+        # Удаляем временный столбец commission, если он был
+        if "commission" in df.columns and "Комиссия" in df.columns:
+            df = df.drop(columns=["commission"])
+
+        # Итоговый порядок столбцов
         col_order = [
             "Ссылка на Ozon",
             "Категория",
@@ -143,8 +153,9 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
         worksheet = writer.sheets['Результаты анализа']
 
         if results:
-            # Индексы колонок по текущей шапке (на случай будущих перестановок)
+            # Индексы колонок по текущей шапке
             headers = [worksheet.cell(1, c).value for c in range(1, worksheet.max_column + 1)]
+            
             def col_idx(name: str) -> int | None:
                 try:
                     return headers.index(name) + 1
@@ -171,7 +182,6 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                 if c_link is not None:
                     cell = worksheet.cell(row=row, column=c_link)
                     if isinstance(cell.value, str) and cell.value.startswith("http"):
-                        # Для старых версий Excel надёжнее формула HYPERLINK()
                         url = cell.value.replace('"', '""')
                         cell.value = f'=HYPERLINK("{url}","{url}")'
                         cell.style = "Hyperlink"
@@ -187,7 +197,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                               f"+{get_column_letter(c_acq)}{row}",
                     )
 
-                # Закуп итого (на партию) = Всего расходы * Кол-во к закупу
+                # Закуп итого (на партию)
                 if c_buy_total is not None and None not in (c_total, c_qty):
                     worksheet.cell(
                         row=row,
@@ -195,7 +205,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                         value=f"={get_column_letter(c_total)}{row}*{get_column_letter(c_qty)}{row}",
                     )
 
-                # Прибыль на единицу = Цена - Всего расходы
+                # Прибыль на единицу
                 if c_profit_unit is not None and None not in (c_price, c_total):
                     worksheet.cell(
                         row=row,
@@ -203,7 +213,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                         value=f"={get_column_letter(c_price)}{row}-{get_column_letter(c_total)}{row}",
                     )
 
-                # Прибыль на партию = Прибыль на ед * Кол-во к закупу
+                # Прибыль на партию
                 if c_profit_batch is not None and None not in (c_profit_unit, c_qty):
                     worksheet.cell(
                         row=row,
@@ -211,7 +221,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                         value=f"={get_column_letter(c_profit_unit)}{row}*{get_column_letter(c_qty)}{row}",
                     )
 
-                # Маржа (%) = Прибыль на ед / Цена
+                # Маржа (%)
                 if c_margin is not None and None not in (c_profit_unit, c_price):
                     worksheet.cell(
                         row=row,
@@ -220,7 +230,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                               f"{get_column_letter(c_profit_unit)}{row}/{get_column_letter(c_price)}{row}*100,\"\")",
                     )
 
-                # ROI (%) = Прибыль на ед / Всего расходы
+                # ROI (%)
                 if c_roi is not None and None not in (c_profit_unit, c_total):
                     worksheet.cell(
                         row=row,
@@ -229,7 +239,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                               f"{get_column_letter(c_profit_unit)}{row}/{get_column_letter(c_total)}{row}*100,\"\")",
                     )
 
-            # Форматы
+            # Форматы чисел
             rub_fmt = '#,##0\\ _₽'
             pct_fmt = '0.00'
             if c_price is not None:
@@ -248,7 +258,6 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                         worksheet.cell(row=row, column=c).number_format = pct_fmt
 
         _apply_header_style(worksheet)
-        # Зелёные колонки, которые заполняет пользователь
         _apply_user_input_column_style(worksheet, ["Кол-во к закупке", "Себестоимость"])
         _apply_fixed_column_widths_like_example(worksheet)
 
@@ -266,7 +275,6 @@ def create_category_template(categories):
         path = cat.get('path', '')
         name = cat.get('name', '')
 
-        # Разделяем путь на основную категорию и подкатегории
         path_parts = path.split('/') if path else []
 
         main_category = path_parts[0] if len(path_parts) > 0 else name
@@ -288,12 +296,12 @@ def create_category_template(categories):
         df.to_excel(writer, index=False, sheet_name='Категории')
 
         worksheet = writer.sheets['Категории']
-        worksheet.column_dimensions['A'].width = 8  # №
-        worksheet.column_dimensions['B'].width = 50  # Категория
-        worksheet.column_dimensions['C'].width = 30  # Основная категория
-        worksheet.column_dimensions['D'].width = 50  # Подкатегория
-        worksheet.column_dimensions['E'].width = 80  # Полный путь
-        worksheet.column_dimensions['F'].width = 10  # Выбрать
+        worksheet.column_dimensions['A'].width = 8
+        worksheet.column_dimensions['B'].width = 50
+        worksheet.column_dimensions['C'].width = 30
+        worksheet.column_dimensions['D'].width = 50
+        worksheet.column_dimensions['E'].width = 80
+        worksheet.column_dimensions['F'].width = 10
 
         worksheet['G1'] = '📌 ИНСТРУКЦИЯ:'
         worksheet['G2'] = '1. Всего категорий: ' + str(len(categories))
@@ -306,9 +314,7 @@ def create_category_template(categories):
 
 
 def parse_categories_from_excel(file_bytes, apply_exclusions=False):
-    """Парсит загруженный Excel файл и возвращает список выбранных категорий
-    apply_exclusions - если True, применяет список исключений (для интерфейса)
-    """
+    """Парсит загруженный Excel файл и возвращает список выбранных категорий"""
     try:
         xls = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
 
@@ -338,7 +344,6 @@ def parse_categories_from_excel(file_bytes, apply_exclusions=False):
             for _, row in df.iterrows():
                 choose_value = str(row.get(choose_column, "")).strip().lower()
                 if choose_value in {"да", "yes", "1", "true", "y"}:
-                    # Определяем, откуда брать путь
                     full_path_col = cols_norm.get("полный путь")
                     if full_path_col is not None:
                         path = row.get(full_path_col)
@@ -347,7 +352,6 @@ def parse_categories_from_excel(file_bytes, apply_exclusions=False):
                         name = row.get(cols_norm.get("категория"))
                         path = row.get(cols_norm.get("путь"))
 
-                    # Применяем исключения только если apply_exclusions=True
                     if apply_exclusions:
                         from categories import is_allowed_category
                         if not is_allowed_category(name, path):
@@ -359,7 +363,6 @@ def parse_categories_from_excel(file_bytes, apply_exclusions=False):
                         'user_defined': True
                     })
         else:
-            # Если нет колонки выбора, берем все строки
             for _, row in df.iterrows():
                 full_path_col = cols_norm.get("полный путь")
                 if full_path_col is not None:
@@ -369,7 +372,6 @@ def parse_categories_from_excel(file_bytes, apply_exclusions=False):
                     name = row.get(cols_norm.get("категория"))
                     path = row.get(cols_norm.get("путь"))
 
-                # Применяем исключения только если apply_exclusions=True
                 if apply_exclusions:
                     from categories import is_allowed_category
                     if not is_allowed_category(name, path):
