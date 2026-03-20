@@ -259,7 +259,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
 
             # Форматы чисел
             rub_fmt = '#,##0\\ _₽'
-            pct_fmt = '0%'
+            pct_fmt = '0\\%'
             if c_price is not None:
                 for row in range(2, worksheet.max_row + 1):
                     worksheet.cell(row=row, column=c_price).number_format = rub_fmt
