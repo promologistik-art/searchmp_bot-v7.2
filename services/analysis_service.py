@@ -19,6 +19,7 @@ from storage.database import (
 from services.excel_service import create_excel_report
 from bot.keyboards import get_end_keyboard, get_after_analysis_keyboard
 from admin_notify import notify_admin_analyze
+from services.logistics_service import LogisticsCalculator
 
 
 class CommissionCalculator:
@@ -318,6 +319,11 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
     # ИНИЦИАЛИЗАЦИЯ КАЛЬКУЛЯТОРА КОМИССИЙ
     commission_calc = get_commission_calculator()
     
+    # ИНИЦИАЛИЗАЦИЯ КАЛЬКУЛЯТОРА ЛОГИСТИКИ
+    logistics_calc = LogisticsCalculator()
+    max_volume = criteria.get('max_volume', 2.0)  # берем объем из критериев
+    logger.info(f"📦 Максимальный объем для логистики: {max_volume} л")
+    
     # Логируем статус загрузки комиссий
     if commission_calc.commissions_df is not None:
         logger.info(f"✅ Комиссии загружены: {len(commission_calc.commissions_df)} записей")
@@ -362,11 +368,17 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
             if results:
                 for r in results:
                     r['category'] = category_name
+                    
                     # РАСЧЁТ КОМИССИИ (процент и рубли)
                     commission_percent = commission_calc.get_commission_percent(category_name, r['price'])
                     commission_rub = commission_calc.get_commission_rub(category_name, r['price'])
-                    r['commission_percent'] = commission_percent   # для колонки "% Комиссии"
-                    r['commission'] = commission_rub               # для колонки "Комиссия, р"
+                    r['commission_percent'] = commission_percent
+                    r['commission'] = commission_rub
+                    
+                    # РАСЧЁТ ЛОГИСТИКИ
+                    logistics_cost = logistics_calc.get_logistics_cost(max_volume, r['price'])
+                    r['logistics'] = logistics_cost
+                    
                 all_results.extend(results)
                 good += 1
             else:
@@ -433,8 +445,12 @@ async def analyze_command(update, context, admin_ids, admin_usernames):
             f"• Выручка > {criteria['min_revenue']:,} руб\n"
             f"• Цена ≤ {criteria['max_price']} руб\n"
             f"• Конкуренты: {comp}\n"
-            f"• Объем ≤ {criteria['max_volume']} л\n\n"
+            f"• Объем ≤ {max_volume} л\n\n"
             f"📦 Найдено товаров: {len(all_results)}\n\n"
+            f"ℹ️ **Важно:**\n"
+            f"• Логистика рассчитана по средним ставкам FBO (Москва-Москва)\n"
+            f"• Использован максимальный объем: ≤ {max_volume} л\n"
+            f"• Данные носят справочный характер\n\n"
             f"❓ **Что дальше?**"
         ),
         reply_markup=get_after_analysis_keyboard()

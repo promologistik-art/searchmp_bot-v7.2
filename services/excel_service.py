@@ -111,10 +111,10 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
         # Пользовательские/расчётные колонки
         df["Кол-во к закупке"] = ""
         df["Себестоимость"] = ""
-        df["% Комиссии"] = df.get("commission_percent", "")  # Процент комиссии
-        df["Комиссия, р"] = df.get("commission", 0)  # Комиссия в рублях
-        df["Логистика"] = ""
-        df["Эквайринг, р"] = ""  # Переименовываем
+        df["% Комиссии"] = df.get("commission_percent", "")
+        df["Комиссия, р"] = df.get("commission", 0)
+        df["Логистика"] = df.get("logistics", 0)          # ← берем уже рассчитанное значение
+        df["Эквайринг, р"] = ""
         df["Всего расходы, р"] = ""
         df["Закуп итого, р"] = ""
         df["Прибыль на ед, р"] = ""
@@ -123,11 +123,11 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
         df["ROI, %"] = ""
 
         # Удаляем временные столбцы
-        for col in ["commission", "commission_percent"]:
+        for col in ["commission", "commission_percent", "logistics"]:
             if col in df.columns:
                 df = df.drop(columns=[col])
 
-        # Итоговый порядок столбцов (новый порядок)
+        # Итоговый порядок столбцов
         col_order = [
             "Ссылка на Ozon",
             "Категория",
@@ -199,8 +199,7 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
                         value=f"={get_column_letter(c_price)}{row}*0.015",
                     )
 
-                # Всего расходы (на единицу)
-                # Собираем все колонки, которые есть
+                # Всего расходы (на единицу) — собираем все колонки, которые есть
                 expense_columns = []
                 if c_cogs is not None:
                     expense_columns.append(get_column_letter(c_cogs))
@@ -259,7 +258,8 @@ def create_excel_report(results: List[Dict]) -> io.BytesIO:
 
             # Форматы чисел
             rub_fmt = '#,##0\\ _₽'
-            pct_fmt = '0\\%'
+            pct_fmt = '0\\%'   # покажет 20% без умножения на 100
+            
             if c_price is not None:
                 for row in range(2, worksheet.max_row + 1):
                     worksheet.cell(row=row, column=c_price).number_format = rub_fmt
