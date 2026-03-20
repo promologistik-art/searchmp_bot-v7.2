@@ -191,7 +191,7 @@ async def process_upload(update: Update, context):
         )
 
         # Автоматически запускаем анализ
-        from analysis import analyze_command
+        from services.analysis_service import analyze_command
         from config import ADMIN_IDS, ADMIN_USERNAMES
         await analyze_command(update, context, ADMIN_IDS, ADMIN_USERNAMES)
 
@@ -228,7 +228,7 @@ async def upload_button_handler(update: Update, context):
             )
 
             # Автоматически запускаем анализ
-            from analysis import analyze_command
+            from services.analysis_service import analyze_command
             from config import ADMIN_IDS, ADMIN_USERNAMES
             await analyze_command(update, context, ADMIN_IDS, ADMIN_USERNAMES)
         else:
