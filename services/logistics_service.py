@@ -28,6 +28,7 @@ class LogisticsCalculator:
             
             # Парсим каждый диапазон
             for _, row in df.iterrows():
+                # Берем столбец B (индекс 1) — "Объём товара"
                 volume_str = str(row.iloc[1]) if pd.notna(row.iloc[1]) else ''
                 
                 # Парсим объемный диапазон
@@ -35,9 +36,9 @@ class LogisticsCalculator:
                 if volume_range is None:
                     continue
                 
-                # Получаем ставки
-                cost_up_to_300 = float(row['Для товаров до 300 руб.']) if pd.notna(row['Для товаров до 300 руб.']) else 0
-                cost_over_300 = float(row['Для товаров свыше 300 руб.']) if pd.notna(row['Для товаров свыше 300 руб.']) else 0
+                # Получаем ставки (столбцы E и F, индексы 4 и 5)
+                cost_up_to_300 = float(row.iloc[4]) if pd.notna(row.iloc[4]) else 0
+                cost_over_300 = float(row.iloc[5]) if pd.notna(row.iloc[5]) else 0
                 
                 self.volume_ranges.append({
                     'min_vol': volume_range['min'],
@@ -75,7 +76,7 @@ class LogisticsCalculator:
     
     def get_logistics_cost(self, max_volume: float, price: float) -> float:
         """
-        Возвращает среднюю стоимость логистики для заданного максимального объема
+        Возвращает стоимость логистики для заданного максимального объема
         
         Args:
             max_volume: максимальный объем товара (литры), заданный пользователем
