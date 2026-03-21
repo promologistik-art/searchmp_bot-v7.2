@@ -53,25 +53,25 @@ class LogisticsCalculator:
             self.volume_ranges = []
     
     def _parse_volume_range(self, volume_str: str) -> dict:
-    """
-    Парсит строку вида "0-0,200 л", "0,201-0,4 л", "От 800,001 л"
-    Возвращает {'min': float, 'max': float} или None
-    """
-    # Формат: "0-0,200 л" или "0,201-0,4 л"
-    match = re.search(r'([\d,]+)\s*-\s*([\d,]+)\s*л', volume_str)
-    if match:
-        # Заменяем запятую на точку для преобразования в float
-        min_vol = float(match.group(1).replace(',', '.'))
-        max_vol = float(match.group(2).replace(',', '.'))
-        return {'min': min_vol, 'max': max_vol}
-    
-    # Формат: "От 800,001 л"
-    match = re.search(r'От\s*([\d,]+)\s*л', volume_str)
-    if match:
-        min_vol = float(match.group(1).replace(',', '.'))
-        return {'min': min_vol, 'max': float('inf')}
-    
-    return None
+        """
+        Парсит строку вида "0-0,200 л", "0,201-0,4 л", "От 800,001 л"
+        Возвращает {'min': float, 'max': float} или None
+        """
+        # Формат: "0-0,200 л" или "0,201-0,4 л"
+        match = re.search(r'([\d,]+)\s*-\s*([\d,]+)\s*л', volume_str)
+        if match:
+            # Заменяем запятую на точку для преобразования в float
+            min_vol = float(match.group(1).replace(',', '.'))
+            max_vol = float(match.group(2).replace(',', '.'))
+            return {'min': min_vol, 'max': max_vol}
+        
+        # Формат: "От 800,001 л"
+        match = re.search(r'От\s*([\d,]+)\s*л', volume_str)
+        if match:
+            min_vol = float(match.group(1).replace(',', '.'))
+            return {'min': min_vol, 'max': float('inf')}
+        
+        return None
     
     def get_logistics_cost(self, max_volume: float, price: float) -> float:
         """
