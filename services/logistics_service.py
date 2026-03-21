@@ -28,7 +28,7 @@ class LogisticsCalculator:
             
             # Парсим каждый диапазон
             for _, row in df.iterrows():
-                volume_str = str(row.iloc[0]) if pd.notna(row.iloc[0]) else ''
+                volume_str = str(row.iloc[1]) if pd.notna(row.iloc[1]) else ''
                 
                 # Парсим объемный диапазон
                 volume_range = self._parse_volume_range(volume_str)
