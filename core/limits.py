@@ -1,3 +1,3 @@
 import asyncio
 
-analysis_semaphore = asyncio.Semaphore(2)
+analysis_semaphore = asyncio.Semaphore(3)
